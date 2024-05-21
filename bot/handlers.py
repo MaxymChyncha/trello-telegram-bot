@@ -28,4 +28,8 @@ async def cmd_start(message: Message) -> None:
         username=message.from_user.username,
         name=message.from_user.first_name,
     )
-    await message.answer(f"Hello {message.from_user.first_name}!")
+    await message.answer(
+        f"👋 Hello <b>{message.from_user.first_name}</b>!\n"
+        "🤖 I'm a Trello Bot\n"
+        "🔎 I will help you to track activities with your Trello cards."
+    )

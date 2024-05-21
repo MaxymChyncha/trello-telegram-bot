@@ -74,8 +74,11 @@ async def handle_trello_webhook(request: Request):
         member = data["action"]["memberCreator"]["fullName"]
 
         message = (
-            f"Card '{card}' was moved from list '{old_list}' "
-            f"to list '{new_list}' on board '{board}' by {member}"
+            f"🔁 Card <b>'{card}'</b> was moved\n\n "
+            f"🟥 From list '{old_list}'\n "
+            f"🟩 To list '{new_list}'\n "
+            f"🗂 On board '{board}'.\n\n"
+            f"👤 By: <b>{member}</b>"
         )
         await bot.send_message(chat_id=os.getenv("TELEGRAM_GROUP_ID"), text=message)
 
