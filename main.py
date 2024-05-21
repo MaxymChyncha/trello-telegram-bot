@@ -1,43 +1,69 @@
 import asyncio
-import logging
-import sys
-from os import getenv
 
-from aiogram import Bot, Dispatcher, html
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.types import Message
-from dotenv import load_dotenv
+import aiohttp
+from aiohttp import web
 
-load_dotenv()
-# Bot token can be obtained via https://t.me/BotFather
-TOKEN = getenv("TELEGRAM_BOT_TOKEN")
-
-# All handlers should be attached to the Router (or Dispatcher)
-dp = Dispatcher()
+from bot.webhooks import handle_bot_webhook, set_bot_webhook
+from trello.boards import set_board
+from trello.webhooks import (
+    set_trello_webhook,
+    handle_trello_webhook,
+    accept_trello_webhook,
+)
+from database.models import setup_db
+from settings.logger import logger
+from settings import config
 
 
-@dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
+async def on_startup(_) -> None:
     """
-    This handler receives messages with `/start` command
+    Performs setup tasks on bot startup.
+
+    Sets up the database and sets the bot webhook.
     """
-    # Most event objects have aliases for API methods that can be called in events' context
-    # For example if you want to answer to incoming message you can use `message.answer(...)` alias
-    # and the target chat will be passed to :ref:`aiogram.methods.send_message.SendMessage`
-    # method automatically or call API method directly via
-    # Bot instance: `bot.send_message(chat_id=message.chat.id, ...)`
-    await message.answer(f"Hello, {html.bold(message.from_user.full_name)}!")
+    await setup_db()
+    await set_bot_webhook()
+
+
+def setup_app() -> web.Application:
+    """
+    Sets up the web application.
+
+    Creates routes for handling Telegram bot and Trello webhook requests.
+    """
+    app = web.Application()
+    app.router.add_post(f"/{config.TELEGRAM_BOT_TOKEN}", handle_bot_webhook)
+    app.router.add_head(f"/trello", accept_trello_webhook)
+    app.router.add_post(f"/trello", handle_trello_webhook)
+    app.on_startup.append(on_startup)
+
+    return app
 
 
 async def main() -> None:
-    # Initialize Bot instance with default bot properties which will be passed to all API calls
-    bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    # And the run events dispatching
-    await dp.start_polling(bot)
+    """
+    Main entry point for the application.
+
+    Sets up the web application, runs it, and sets up the Trello webhook.
+    """
+    app = setup_app()
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=8080)
+    await site.start()
+
+    async with aiohttp.ClientSession() as session:
+        board_id = await set_board(session)
+        await set_trello_webhook(session, board_id)
 
 
+#
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("The bot was closed.")
+    finally:
+        loop.close()
